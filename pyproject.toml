@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sales-forecast"
+version = "0.1.0"
+description = "End-to-end retail sales forecasting pipeline (Rossmann store sales)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy==2.3.5",
+    "pandas==2.3.3",
+    "matplotlib==3.10.8",
+    "scikit-learn==1.8.0",
+    "statsmodels==0.14.6",
+    "pmdarima==2.1.1",
+    "lightgbm==4.7.0",
+    "torch==2.11.0",
+    "joblib==1.5.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

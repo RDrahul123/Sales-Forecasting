@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.webapp_data/
+outputs/
+webapp_data/
+.venv/
+venv/
+*.ipynb
+.git

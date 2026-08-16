@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+outputs/figures/
+outputs/forecasts/
+outputs/models/
+data/train.csv
+data/store.csv
+webapp_data/
+.venv/

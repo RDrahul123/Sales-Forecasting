@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Forecasting</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>📈</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">📈</span>
+    <div>
+      <h1>Sales Forecasting</h1>
+      <p>SARIMA &middot; LightGBM &middot; LSTM &mdash; Rossmann Store Sales</p>
+    </div>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="forecast">Forecast</button>
+    <button class="tab" data-tab="upload">Upload &amp; Train</button>
+    <a class="tab tab-link" href="/outputs/report.md" target="_blank">Report</a>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-dashboard" class="tab-panel active">
+    <div class="selector-row">
+      <label>Dataset
+        <select id="dash-dataset"></select>
+      </label>
+      <label>Store
+        <select id="dash-store"></select>
+      </label>
+      <span id="dash-status" class="status"></span>
+    </div>
+
+    <div id="dash-content">
+      <p class="placeholder">Select a dataset and store to load the dashboard.</p>
+    </div>
+  </section>
+
+  <section id="tab-forecast" class="tab-panel">
+    <div class="selector-row">
+      <label>Dataset
+        <select id="fc-dataset"></select>
+      </label>
+      <label>Store
+        <select id="fc-store"></select>
+      </label>
+      <label>Horizon (days)
+        <select id="fc-horizon">
+          <option value="30">30</option>
+          <option value="90">90</option>
+          <option value="180">180</option>
+        </select>
+      </label>
+      <label>Model
+        <select id="fc-model">
+          <option value="best">Best (auto)</option>
+          <option value="LightGBM">LightGBM</option>
+          <option value="LSTM">LSTM</option>
+          <option value="SARIMA">SARIMA</option>
+        </select>
+      </label>
+      <label>Promo scenario
+        <select id="fc-promo">
+          <option value="repeat">Repeat recent pattern</option>
+          <option value="none">No promotions</option>
+          <option value="full">Full promotions</option>
+        </select>
+      </label>
+      <button class="btn primary" id="fc-run">Run forecast</button>
+    </div>
+
+    <div id="fc-result" class="hidden">
+      <h2 id="fc-title"></h2>
+      <div id="fc-chart" class="chart"></div>
+      <div class="result-actions">
+        <button class="btn" id="fc-download">Download CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table id="fc-table" class="data-table"></table>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-upload" class="tab-panel">
+    <div class="upload-grid">
+      <div class="card">
+        <h2>1. Upload your data</h2>
+        <p class="muted">
+          Train CSV needs columns:
+          <code>Store, Date, Sales, Open, Promo, StateHoliday, SchoolHoliday</code>.
+          The optional store metadata CSV uses the Rossmann
+          <code>store.csv</code> schema. If omitted, default metadata is used.
+        </p>
+        <label class="file-drop" id="train-drop">
+          <input type="file" id="train-file" accept=".csv">
+          <span id="train-file-label">Choose train.csv</span>
+        </label>
+        <label class="file-drop" id="store-drop">
+          <input type="file" id="store-file" accept=".csv">
+          <span id="store-file-label">Optional: choose store.csv</span>
+        </label>
+        <button class="btn primary" id="upload-btn" disabled>Upload</button>
+        <div id="upload-status" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>2. Train models</h2>
+        <p class="muted">Trains SARIMA, LightGBM and LSTM for one store (~2&ndash;3 min).</p>
+        <label>Uploaded dataset
+          <select id="up-dataset"></select>
+        </label>
+        <label>Store
+          <select id="up-store"></select>
+        </label>
+        <button class="btn primary" id="train-btn" disabled>Train models</button>
+        <div class="progress hidden" id="train-progress">
+          <div class="progress-bar" id="train-progress-bar"></div>
+          <span class="progress-label" id="train-progress-label">0%</span>
+        </div>
+        <div id="train-status" class="status"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  Models: SARIMA (pmdarima) &middot; LightGBM &middot; LSTM (PyTorch) &mdash; confidence bands at 80/95%
+</footer>
+
+<script src="/static/vendor/plotly.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
