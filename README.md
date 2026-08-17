@@ -119,11 +119,11 @@ sequenceDiagram
 
 | Time series & trends | Forecast with confidence bands |
 |:---:|:---:|
-| ![time series](outputs/figures/store_1097_timeseries.png) | ![forecast](outputs/figures/store_1097_30d_forecast.png) |
+| ![time series](output/figures/store_1097_timeseries.png) | ![forecast](output/figures/store_1097_30d_forecast.png) |
 
 | Seasonality analysis | Feature importance |
 |:---:|:---:|
-| ![seasonality](outputs/figures/store_1097_seasonality.png) | ![feature importance](outputs/figures/store_1097_feature_importance.png) |
+| ![seasonality](output/figures/store_1097_seasonality.png) | ![feature importance](output/figures/store_1097_feature_importance.png) |
 
 ---
 
