@@ -96,19 +96,19 @@ sequenceDiagram
   Drop PNG/JPG screenshots into a `docs/screenshots/` folder (create it if it
   doesn't exist yet) and update the paths below — GitHub will render them
   inline once the files exist. Recommended shots:
-    docs/screenshots/dashboard.png    – Dashboard tab, store overview + KPIs
+    docs/screenshots/dashboard_1.png    – Dashboard tab, store overview + KPIs
     docs/screenshots/forecast.png     – Forecast tab, chart with 80/95% bands
     docs/screenshots/upload.png       – Upload & Train tab, progress bar mid-run
 -->
 
 | Dashboard | Forecast |
 |:---:|:---:|
-| ![Dashboard screenshot](docs/screenshots/dashboard.png) | ![Forecast screenshot](docs/screenshots/forecast.png) |
+| ![Dashboard screenshot](docs/screenshots/dashboard_1.png) | ![Forecast screenshot](docs/screenshots/forecast.png) |
 | Store overview — KPI strip, model comparison, feature importance, EDA gallery | On-demand forecast with 80%/95% confidence bands, CSV download |
 
 | Upload & Train |
 |:---:|
-| ![Upload and train screenshot](docs/screenshots/upload.png) |
+| ![Upload and train screenshot](docs/screenshots/upload_train.png) |
 | Drop in your own CSV, then train SARIMA / LightGBM / LSTM with live progress |
 
 > No screenshots yet? Run `python run_web.py`, open `http://127.0.0.1:8000`, and
