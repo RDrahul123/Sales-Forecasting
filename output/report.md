@@ -34,27 +34,27 @@ Test window: 2015-01-24 → 2015-07-31 (189 days).
 
 ### EDA figures
 
-![store_1097_timeseries](outputs/figures/store_1097_timeseries.png)
+![store_1097_timeseries](output/figures/store_1097_timeseries.png)
 
-![store_1097_seasonality](outputs/figures/store_1097_seasonality.png)
+![store_1097_seasonality](output/figures/store_1097_seasonality.png)
 
-![store_1097_acf_pacf](outputs/figures/store_1097_acf_pacf.png)
+![store_1097_acf_pacf](output/figures/store_1097_acf_pacf.png)
 
-![store_1097_corr](outputs/figures/store_1097_corr.png)
+![store_1097_corr](output/figures/store_1097_corr.png)
 
-![store_1097_decomposition](outputs/figures/store_1097_decomposition.png)
+![store_1097_decomposition](output/figures/store_1097_decomposition.png)
 
 ### Actual vs predicted (test period)
 
-![store_1097_actual_vs_sarima](outputs/figures/store_1097_actual_vs_sarima.png)
+![store_1097_actual_vs_sarima](output/figures/store_1097_actual_vs_sarima.png)
 
-![store_1097_actual_vs_lstm](outputs/figures/store_1097_actual_vs_lstm.png)
+![store_1097_actual_vs_lstm](output/figures/store_1097_actual_vs_lstm.png)
 
-![store_1097_actual_vs_lightgbm](outputs/figures/store_1097_actual_vs_lightgbm.png)
+![store_1097_actual_vs_lightgbm](output/figures/store_1097_actual_vs_lightgbm.png)
 
 ### Feature importance (LightGBM)
 
-![store_1097_feature_importance](outputs/figures/store_1097_feature_importance.png)
+![store_1097_feature_importance](output/figures/store_1097_feature_importance.png)
 
 Top 10 features:
 
