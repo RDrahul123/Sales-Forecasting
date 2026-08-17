@@ -50,9 +50,72 @@ flowchart LR
     G --> H["report.md + Web app"]
 ```
 
+<details>
+<summary><strong>▸ Web app request flow</strong> (click to expand)</summary>
+
+How the browser, FastAPI backend and background job runner talk to each other for the three core actions — loading a dashboard, running a forecast, and training on uploaded data:
+
+```mermaid
+sequenceDiagram
+    participant U as Browser
+    participant API as FastAPI
+    participant J as Background job
+
+    U->>API: GET /api/datasets
+    API-->>U: datasets + stores (trained flag)
+
+    U->>API: GET /api/stores/{id}/overview
+    API-->>U: metrics · insights · figures · forecasts
+
+    U->>API: POST /api/forecast {horizon, model, promo_mode}
+    API-->>U: predicted_sales + 80%/95% bands
+
+    U->>API: POST /api/upload (train.csv)
+    API-->>U: upload_id
+
+    U->>API: POST /api/retrain {dataset, store_id}
+    API->>J: submit training job
+    API-->>U: job_id
+    loop every 1.5s
+        U->>API: GET /api/jobs/{job_id}
+        API-->>U: progress %, message
+    end
+    J-->>API: status = succeeded
+    API-->>U: ready to forecast
+```
+
+</details>
+
 ---
 
 ## 🖼️ Screenshots
+
+### Web application
+
+<!--
+  Drop PNG/JPG screenshots into a `docs/screenshots/` folder (create it if it
+  doesn't exist yet) and update the paths below — GitHub will render them
+  inline once the files exist. Recommended shots:
+    docs/screenshots/dashboard.png    – Dashboard tab, store overview + KPIs
+    docs/screenshots/forecast.png     – Forecast tab, chart with 80/95% bands
+    docs/screenshots/upload.png       – Upload & Train tab, progress bar mid-run
+-->
+
+| Dashboard | Forecast |
+|:---:|:---:|
+| ![Dashboard screenshot](docs/screenshots/dashboard.png) | ![Forecast screenshot](docs/screenshots/forecast.png) |
+| Store overview — KPI strip, model comparison, feature importance, EDA gallery | On-demand forecast with 80%/95% confidence bands, CSV download |
+
+| Upload & Train |
+|:---:|
+| ![Upload and train screenshot](docs/screenshots/upload.png) |
+| Drop in your own CSV, then train SARIMA / LightGBM / LSTM with live progress |
+
+> No screenshots yet? Run `python run_web.py`, open `http://127.0.0.1:8000`, and
+> capture each tab — then save them at the paths above and this section lights up
+> automatically. Until then, GitHub shows the alt text as a placeholder.
+
+### Pipeline output figures
 
 | Time series & trends | Forecast with confidence bands |
 |:---:|:---:|
@@ -104,13 +167,13 @@ The image uses a CPU-only PyTorch build to stay lean.
 
 ## 🌐 Web application
 
-A FastAPI backend + single-page frontend (no build step, offline Plotly) exposes the whole workflow in the browser.
+A FastAPI backend + single-page frontend (no build step, offline Plotly) exposes the whole workflow in the browser. Pick a dataset and store once from the sidebar — that context follows you across every tab.
 
 | Tab | What it does |
 |---|---|
-| **Dashboard** | Pick a dataset + store → model comparison, KPIs, feature importance, EDA figures, precomputed forecast charts |
-| **Forecast** | On-demand forecast for any store, horizon, model and promo scenario — generated from saved artifacts in seconds, CSV downloadable |
-| **Upload & Train** | Upload your own `train.csv` (+ optional `store.csv`), train all three models for one store (~2–3 min) with live progress, then forecast it |
+| **Dashboard** | Store overview at a glance — KPI strip (best model, MAPE, promo lift, holiday delta), model comparison table, feature importance, error-by-segment breakdown, precomputed forecast charts, and a click-to-zoom EDA figure gallery |
+| **Forecast** | On-demand forecast for the selected store — pick horizon, model and promo scenario, get 80%/95% confidence bands charted instantly, CSV downloadable |
+| **Upload & Train** | Upload your own `train.csv` (+ optional `store.csv`), train all three models for one store (~2–3 min) with a live progress bar, then it's ready to forecast |
 
 ### REST API
 
@@ -183,6 +246,8 @@ sales_forecasting/
 ├── notebook/
 │   ├── sales_forecasting.ipynb   # interactive walkthrough
 │   └── generate_notebook.py      # regenerates the notebook
+├── docs/
+│   └── screenshots/           # dashboard.png, forecast.png, upload.png (add your own)
 ├── outputs/                   # figures/, forecasts/, models/, report.md (generated)
 ├── run_pipeline.py            # CLI entry point
 ├── run_web.py                 # web app entry point
