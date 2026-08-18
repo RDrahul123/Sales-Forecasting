@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Almanac — Sales Forecasting</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="./style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='none' stroke='%23e8a33d' stroke-width='1.6'/><circle cx='16' cy='16' r='9' fill='none' stroke='%234fb286' stroke-width='1.6'/><circle cx='16' cy='16' r='2' fill='%23e8a33d'/></svg>">
 </head>
 <body>
@@ -170,7 +170,94 @@
 </div>
 <div class="toast-stack" id="toast-stack"></div>
 
-<script src="/static/vendor/plotly.min.js"></script>
-<script src="/static/app.js"></script>
+<script src="./vendor/plotly.min.js"></script>
+<script>
+/* ---- MOCK API LAYER (preview only, not part of the real app) ---- */
+(function () {
+  function dateRange(n, endOffset) {
+    const out = [];
+    const end = new Date(); end.setDate(end.getDate() - endOffset);
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(end); d.setDate(d.getDate() - i);
+      out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  }
+  function wiggle(base, n, amp, trend) {
+    return Array.from({ length: n }, (_, i) =>
+      Math.round(base + trend * i + Math.sin(i / 6) * amp + (Math.random() - 0.5) * amp * 0.6));
+  }
+  const datasets = { datasets: [
+    { dataset: "demo", label: "Rossmann demo", stores: [
+      { store_id: 1097, trained: true }, { store_id: 682, trained: true }, { store_id: 733, trained: true },
+      { store_id: 4, trained: false },
+    ]},
+  ]};
+  function overview() {
+    const hist = dateRange(90, 30);
+    return {
+      summary: {
+        best_model: "LightGBM",
+        metrics: {
+          LightGBM: { rmse: 1045, mae: 786, mape: 7.09, mase: 0.62 },
+          LSTM: { rmse: 1310, mae: 980, mape: 9.4, mase: 0.81 },
+          SARIMA: { rmse: 1520, mae: 1140, mape: 11.2, mase: 0.97 },
+        },
+        insights: { avg_sales: 6820, peak_dow: "Mon", trough_dow: "Sun", promo_lift_pct: 18.4, holiday_delta_pct: -32.1 },
+        feature_importance: { "sales_lag_7": 0.182, "promo": 0.151, "rolling_mean_14": 0.134, "day_of_week": 0.109, "sales_lag_1": 0.098, "is_holiday": 0.071, "rolling_std_7": 0.058, "month": 0.049, "competition_distance": 0.041, "school_holiday": 0.033 },
+        segmentation: {
+          Promo: [{ group: "No promo", count: 210, mape: 6.1, mae: 640 }, { group: "Promo", count: 105, mape: 9.8, mae: 910 }],
+          Weekday: [{ group: "Mon–Fri", count: 220, mape: 7.4, mae: 780 }, { group: "Weekend", count: 95, mape: 8.6, mae: 830 }],
+        },
+      },
+      figures: [
+        { name: "Time series", url: "https://raw.githubusercontent.com/RDrahul123/Sales-Forecasting/main/outputs/figures/store_1097_timeseries.png" },
+        { name: "30-day forecast", url: "https://raw.githubusercontent.com/RDrahul123/Sales-Forecasting/main/outputs/figures/store_1097_30d_forecast.png" },
+        { name: "Seasonality", url: "https://raw.githubusercontent.com/RDrahul123/Sales-Forecasting/main/outputs/figures/store_1097_seasonality.png" },
+        { name: "Feature importance", url: "https://raw.githubusercontent.com/RDrahul123/Sales-Forecasting/main/outputs/figures/store_1097_feature_importance.png" },
+      ],
+      forecasts: [30, 90, 180].map((h) => {
+        const dates = dateRange(h, -h);
+        const pred = wiggle(7000, h, 500, 2);
+        return {
+          horizon: h, model: "LightGBM", dates,
+          predicted_sales: pred,
+          lower_80: pred.map((v) => Math.round(v * 0.9)),
+          upper_80: pred.map((v) => Math.round(v * 1.1)),
+          lower_95: pred.map((v) => Math.round(v * 0.82)),
+          upper_95: pred.map((v) => Math.round(v * 1.18)),
+        };
+      }),
+    };
+  }
+  function historyResp() {
+    const dates = dateRange(90, 0);
+    return { history: dates.map((d, i) => ({ date: d, sales: wiggle(6800, 90, 700, 0.5)[i] })) };
+  }
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async (url, opts) => {
+    const u = String(url);
+    const ok = (obj) => ({ ok: true, status: 200, json: async () => obj });
+    if (u.includes("/api/datasets")) return ok(datasets);
+    if (u.includes("/overview")) return ok(overview());
+    if (u.includes("/history")) return ok(historyResp());
+    if (u.includes("/api/forecast") && opts && opts.method === "POST") {
+      const body = JSON.parse(opts.body);
+      const h = body.horizon || 30;
+      const dates = dateRange(h, -h);
+      const pred = wiggle(7000, h, 500, 2);
+      return ok({
+        dataset: body.dataset, store_id: body.store_id, horizon: h, model: body.model === "best" ? "LightGBM" : body.model,
+        promo_mode: body.promo_mode, dates, predicted_sales: pred,
+        lower_80: pred.map((v) => Math.round(v * 0.9)), upper_80: pred.map((v) => Math.round(v * 1.1)),
+        lower_95: pred.map((v) => Math.round(v * 0.82)), upper_95: pred.map((v) => Math.round(v * 1.18)),
+        download_url: "#",
+      });
+    }
+    return realFetch(url, opts);
+  };
+})();
+</script>
+<script src="./app.js"></script>
 </body>
 </html>

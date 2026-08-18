@@ -2,7 +2,7 @@
 
 const state = {
   datasets: [],
-  overviewCache: new Map(),
+  ctx: { dataset: null, store: null },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -24,21 +24,35 @@ function setStatus(el, msg, kind = "") {
   el.className = "status" + (kind ? " " + kind : "");
 }
 
+function toast(msg, kind = "error") {
+  const stack = $("#toast-stack");
+  const el = document.createElement("div");
+  el.className = "toast" + (kind === "ok" ? " ok" : "");
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+/* ============================================================
+   Tabs
+   ============================================================ */
 function initTabs() {
-  $$(".tab").forEach((btn) => {
+  $$(".nav-item[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (btn.classList.contains("tab-link")) return;
-      $$(".tab").forEach((b) => b.classList.remove("active"));
+      $$(".nav-item[data-tab]").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       $$(".tab-panel").forEach((p) => p.classList.remove("active"));
       $("#tab-" + btn.dataset.tab).classList.add("active");
       if (btn.dataset.tab === "dashboard") refreshDashboard();
-      if (btn.dataset.tab === "forecast") refreshForecastForm();
     });
   });
 }
 
+/* ============================================================
+   Shared sidebar context (dataset / store)
+   ============================================================ */
 function fillDatasetSelect(select, withUpload = false) {
+  const prev = select.value;
   select.innerHTML = "";
   for (const ds of state.datasets) {
     if (!withUpload && ds.dataset.startsWith("upload:")) continue;
@@ -52,19 +66,23 @@ function fillDatasetSelect(select, withUpload = false) {
     opt.value = "";
     opt.textContent = "No datasets available";
     select.appendChild(opt);
+  } else if (prev) {
+    setSelectValue(select, prev);
   }
 }
 
 function fillStoreSelect(select, dataset) {
+  const prev = select.value;
   const ds = state.datasets.find((d) => d.dataset === dataset);
   select.innerHTML = "";
   if (!ds) return;
   for (const st of ds.stores) {
     const opt = document.createElement("option");
     opt.value = st.store_id;
-    opt.textContent = "Store " + st.store_id + (st.trained ? "" : " (untrained)");
+    opt.textContent = "Store " + st.store_id + (st.trained ? "" : " · untrained");
     select.appendChild(opt);
   }
+  if (prev) setSelectValue(select, prev);
 }
 
 function setSelectValue(select, value) {
@@ -83,41 +101,80 @@ async function loadDatasets() {
     state.datasets = data.datasets;
   } catch (err) {
     state.datasets = [];
-    setStatus($("#dash-status"), "Failed to load datasets: " + err.message, "error");
+    toast("Failed to load datasets: " + err.message);
   }
-  fillDatasetSelect($("#dash-dataset"));
-  fillDatasetSelect($("#fc-dataset"), true);
+  fillDatasetSelect($("#ctx-dataset"));
   fillDatasetSelect($("#up-dataset"), true);
 }
 
-function currentStore(datasetKey) {
-  const sel = datasetKey === "dash" ? $("#dash-store") : $("#fc-store");
-  return sel.value ? Number(sel.value) : null;
+function syncContext() {
+  state.ctx.dataset = $("#ctx-dataset").value || null;
+  fillStoreSelect($("#ctx-store"), state.ctx.dataset);
+  state.ctx.store = $("#ctx-store").value ? Number($("#ctx-store").value) : null;
+  updateStoreReadout();
+  refreshActiveTab();
 }
 
+function updateStoreReadout() {
+  const nameEl = $("#ctx-store-name");
+  const subEl = $("#ctx-store-sub");
+  if (state.ctx.store == null) {
+    nameEl.textContent = "Select a store";
+    subEl.textContent = "";
+    $("#ctx-glance").innerHTML = "";
+    return;
+  }
+  const ds = state.datasets.find((d) => d.dataset === state.ctx.dataset);
+  nameEl.textContent = "Store " + state.ctx.store;
+  subEl.textContent = ds ? ds.label : state.ctx.dataset;
+}
+
+function refreshActiveTab() {
+  const active = $(".tab-panel.active");
+  if (!active) return;
+  if (active.id === "tab-dashboard") refreshDashboard();
+}
+
+/* ============================================================
+   Dashboard
+   ============================================================ */
 async function refreshDashboard() {
-  const dataset = $("#dash-dataset").value;
-  const store = currentStore("dash");
+  const { dataset, store } = state.ctx;
+  const content = $("#dash-content");
   if (!dataset || store == null) {
-    $("#dash-content").innerHTML = '<p class="placeholder">Select a dataset and store.</p>';
+    content.innerHTML = emptyState("◈", "Choose a dataset and store from the sidebar to load its forecast readings.");
     return;
   }
   const ds = state.datasets.find((d) => d.dataset === dataset);
   const st = ds && ds.stores.find((s) => s.store_id === store);
   if (st && !st.trained) {
-    $("#dash-content").innerHTML =
-      '<div class="card"><p class="muted">Store ' + store +
-      ' has not been trained yet. Go to the <b>Upload &amp; Train</b> tab to train it.</p></div>';
+    content.innerHTML = emptyState(
+      "⇪",
+      `Store ${store} hasn't been trained yet. Head to <b>Upload &amp; Train</b> to train SARIMA, LightGBM and LSTM for it.`
+    );
     return;
   }
-  $("#dash-content").innerHTML = '<p class="placeholder">Loading dashboard&hellip;</p>';
+  content.innerHTML = '<p class="placeholder">Reading store history&hellip;</p>';
   try {
     const ov = await api(`/api/stores/${store}/overview?dataset=${encodeURIComponent(dataset)}`);
     renderOverview(ov);
+    updateGlance(ov);
   } catch (err) {
-    $("#dash-content").innerHTML =
-      '<div class="card"><p class="status error">' + esc(err.message) + "</p></div>";
+    content.innerHTML = emptyState("!", esc(err.message));
   }
+}
+
+function emptyState(glyph, html) {
+  return `<div class="empty-state"><div class="empty-glyph">${glyph}</div><p>${html}</p></div>`;
+}
+
+function updateGlance(ov) {
+  const s = ov.summary;
+  const m = s.metrics[s.best_model] || {};
+  $("#ctx-glance").innerHTML = `
+    <div class="glance-item"><span class="glance-label">Best model</span><span class="glance-value">${esc(s.best_model)}</span></div>
+    <div class="glance-item jade"><span class="glance-label">MAPE</span><span class="glance-value">${m.mape != null ? Number(m.mape).toFixed(1) + "%" : "–"}</span></div>
+  `;
 }
 
 function renderOverview(ov) {
@@ -126,57 +183,57 @@ function renderOverview(ov) {
   const m = s.metrics[best] || {};
   const ins = s.insights;
 
-  const cards = [
-    ["Best model", esc(best), "lightgbm / lstm / sarima"],
-    ["RMSE", m.rmse != null ? Number(m.rmse).toLocaleString() : "&ndash;", "recursive multi-step"],
-    ["MAPE", m.mape != null ? Number(m.mape).toFixed(2) + "%" : "&ndash;", "mean abs. pct error"],
-    ["MAE", m.mae != null ? Number(m.mae).toLocaleString() : "&ndash;", "avg daily error"],
-    ["Avg sales", Number(ins.avg_sales || 0).toLocaleString(), "daily mean"],
-    ["Peak / trough day", esc(ins.peak_dow) + " / " + esc(ins.trough_dow), "day of week"],
-    ["Promo lift", Number(ins.promo_lift_pct || 0).toFixed(1) + "%", "sales on promo days"],
-    ["Holiday delta", Number(ins.holiday_delta_pct || 0).toFixed(1) + "%", "sales on holidays"],
+  const kpis = [
+    ["Best model", esc(best), "lightgbm / lstm / sarima", "hero"],
+    ["MAPE", m.mape != null ? Number(m.mape).toFixed(2) + "%" : "–", "mean abs. pct error", "hero"],
+    ["RMSE", m.rmse != null ? Number(m.rmse).toLocaleString() : "–", "recursive multi-step", ""],
+    ["MAE", m.mae != null ? Number(m.mae).toLocaleString() : "–", "avg daily error", ""],
+    ["Avg sales", Number(ins.avg_sales || 0).toLocaleString(), "daily mean", ""],
+    ["Peak / trough", esc(ins.peak_dow) + " / " + esc(ins.trough_dow), "day of week", ""],
+    ["Promo lift", (Number(ins.promo_lift_pct || 0) >= 0 ? "+" : "") + Number(ins.promo_lift_pct || 0).toFixed(1) + "%", "sales on promo days", "good"],
+    ["Holiday delta", (Number(ins.holiday_delta_pct || 0) >= 0 ? "+" : "") + Number(ins.holiday_delta_pct || 0).toFixed(1) + "%", "sales on holidays", ""],
   ];
-  $("#dash-content").innerHTML =
-    '<div class="grid-2">' +
-    '<div class="card"><h2>Model comparison <span class="muted">(hold-out test, recursive)</span></h2>' +
-    "<div class='table-wrap'><table class='data-table'><thead><tr>" +
-    "<th>Model</th><th>RMSE</th><th>MAE</th><th>MAPE</th><th>MASE</th></tr></thead><tbody>" +
-    Object.keys(s.metrics).filter((k) => !k.endsWith("_recursive")).map((k) => {
-      const mm = s.metrics[k];
-      return "<tr" + (k === best ? " style='background:rgba(79,140,255,0.12)'" : "") + ">" +
-        "<td>" + esc(k) + "</td><td>" + Number(mm.rmse).toLocaleString() + "</td>" +
-        "<td>" + Number(mm.mae).toLocaleString() + "</td>" +
-        "<td>" + Number(mm.mape).toFixed(2) + "%</td>" +
-        "<td>" + Number(mm.mase).toFixed(3) + "</td></tr>";
-    }).join("") + "</tbody></table></div>" +
-    "<h3 class='section-title'>Feature importance (top 10)</h3>" +
-    "<div id='dash-importance'></div></div>" +
 
-    '<div class="card"><h2>Key insights</h2>' +
-    '<div class="grid-3">' +
-    cards.map((c) =>
-      "<div class='stat-card'><div class='stat-label'>" + c[0] + "</div>" +
-      "<div class='stat-value'>" + c[1] + "</div>" +
-      "<div class='stat-sub'>" + c[2] + "</div></div>"
+  $("#dash-content").innerHTML =
+    '<div class="kpi-strip">' +
+    kpis.map((c) =>
+      `<div class="kpi-cell ${c[3]}"><div class="kpi-label">${c[0]}</div><div class="kpi-value">${c[1]}</div><div class="kpi-sub">${c[2]}</div></div>`
     ).join("") +
     "</div>" +
-    "<h3 class='section-title'>Error by segment (LightGBM)</h3>" +
-    renderSegmentation(s.segmentation) +
-    "</div></div>" +
 
-    "<h3 class='section-title'>Forecast charts</h3>" +
+    '<div class="section-head"><h3>Forecast, at a glance</h3></div>' +
     '<div class="grid-2" id="dash-forecast-charts"></div>' +
 
-    "<h3 class='section-title'>Exploratory analysis</h3>" +
+    '<div class="section-head"><h3>Model comparison</h3><span class="muted" style="font-size:12px;">hold-out test &middot; recursive</span></div>' +
+    "<div class='table-wrap'><table class='data-table'><thead><tr>" +
+    "<th>Model</th><th class='num'>RMSE</th><th class='num'>MAE</th><th class='num'>MAPE</th><th class='num'>MASE</th></tr></thead><tbody>" +
+    Object.keys(s.metrics).filter((k) => !k.endsWith("_recursive")).map((k) => {
+      const mm = s.metrics[k];
+      return "<tr" + (k === best ? " class='is-best'" : "") + ">" +
+        "<td>" + esc(k) + "</td>" +
+        "<td class='num'>" + Number(mm.rmse).toLocaleString() + "</td>" +
+        "<td class='num'>" + Number(mm.mae).toLocaleString() + "</td>" +
+        "<td class='num'>" + Number(mm.mape).toFixed(2) + "%</td>" +
+        "<td class='num'>" + Number(mm.mase).toFixed(3) + "</td></tr>";
+    }).join("") + "</tbody></table></div>" +
+
+    '<div class="grid-2" style="margin-top:14px;align-items:stretch;">' +
+      '<div class="card"><div class="eyebrow">By segment</div><h3 class="panel-title" style="font-size:14px;">Error, ' + esc(best) + '</h3><div style="margin-top:12px;">' +
+        renderSegmentation(s.segmentation) +
+      "</div></div>" +
+      '<div class="card"><div class="eyebrow">Signal</div><h3 class="panel-title" style="font-size:14px;">Feature importance</h3><div id="dash-importance" style="margin-top:14px;"></div></div>' +
+    "</div>" +
+
+    '<div class="section-head"><h3>Exploratory analysis</h3></div>' +
     '<div class="fig-grid">' +
     ov.figures.map((f) =>
-      "<figure class='fig-card'><img src='" + esc(f.url) + "' alt='" + esc(f.name) + "'>" +
-      "<figcaption class='fig-title'>" + esc(f.name) + "</figcaption></figure>"
+      `<figure class="fig-card" data-img="${esc(f.url)}"><img src="${esc(f.url)}" alt="${esc(f.name)}" loading="lazy"><figcaption class="fig-title">${esc(f.name)}</figcaption></figure>`
     ).join("") +
     "</div>";
 
   drawImportance($("#dash-importance"), s.feature_importance);
   loadForecastCharts(ov);
+  bindFigureLightbox();
 }
 
 function renderSegmentation(seg) {
@@ -184,13 +241,13 @@ function renderSegmentation(seg) {
   for (const [key, groups] of Object.entries(seg || {})) {
     for (const g of groups) {
       rows.push("<tr><td>" + esc(key) + "</td><td>" + esc(g.group) + "</td>" +
-        "<td>" + Number(g.count).toLocaleString() + "</td>" +
-        "<td>" + Number(g.mape).toFixed(2) + "%</td>" +
-        "<td>" + Number(g.mae).toLocaleString() + "</td></tr>");
+        "<td class='num'>" + Number(g.count).toLocaleString() + "</td>" +
+        "<td class='num'>" + Number(g.mape).toFixed(2) + "%</td>" +
+        "<td class='num'>" + Number(g.mae).toLocaleString() + "</td></tr>");
     }
   }
   return "<div class='table-wrap'><table class='data-table'><thead><tr>" +
-    "<th>Dimension</th><th>Group</th><th>Days</th><th>MAPE</th><th>MAE</th></tr></thead>" +
+    "<th>Dimension</th><th>Group</th><th class='num'>Days</th><th class='num'>MAPE</th><th class='num'>MAE</th></tr></thead>" +
     "<tbody>" + rows.join("") + "</tbody></table></div>";
 }
 
@@ -198,65 +255,54 @@ function drawImportance(el, imp) {
   const entries = Object.entries(imp || {}).slice(0, 10);
   const max = Math.max(...entries.map(([, v]) => v), 1);
   el.innerHTML = entries.map(([k, v]) =>
-    "<div style='margin-bottom:5px'><span style='font-size:12px'>" + esc(k) + "</span>" +
-    "<div style='background:var(--panel-2);border-radius:4px;height:10px;margin-top:3px'>" +
-    "<div style='width:" + ((v / max) * 100).toFixed(1) +
-    "%;height:100%;background:var(--accent);border-radius:4px'></div></div></div>"
+    `<div class="imp-row"><div class="imp-label"><span>${esc(k)}</span><span>${(v).toFixed(3)}</span></div>` +
+    `<div class="imp-track"><div class="imp-fill" style="width:${((v / max) * 100).toFixed(1)}%"></div></div></div>`
   ).join("");
+}
+
+function bindFigureLightbox() {
+  $$(".fig-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      $("#lightbox-img").src = card.dataset.img;
+      $("#lightbox-img").alt = card.querySelector("img").alt;
+      $("#lightbox").classList.remove("hidden");
+    });
+  });
 }
 
 async function loadForecastCharts(ov) {
   const chartsEl = $("#dash-forecast-charts");
   chartsEl.innerHTML = "";
   const horizons = [...new Set(ov.forecasts.map((f) => f.horizon))];
+  let histData = null;
+  try {
+    histData = await api(`/api/stores/${ov.summary.store_id || state.ctx.store}/history?dataset=${encodeURIComponent(state.ctx.dataset)}&days=90`);
+  } catch (_) { /* charts still render without history */ }
+
   for (const h of horizons) {
     const fcs = ov.forecasts.filter((f) => f.horizon === h);
     const best = fcs.find((f) => f.model.toLowerCase() === ov.summary.best_model.toLowerCase()) || fcs[0];
     if (!best) continue;
+    const wrap = document.createElement("div");
+    wrap.className = "chart-card";
     const div = document.createElement("div");
     div.className = "chart";
-    div.style.padding = "10px";
-    div.innerHTML = '<h3 style="font-size:14px;margin:6px 10px">' + h +
-      "-day forecast (" + esc(best.model) + ")</h3>";
-    chartsEl.appendChild(div);
-    try {
-      const fc = await fetchCsv(best.url);
-      drawBandChart(div, fc, ov.summary.best_model);
-    } catch (e) {
-      div.innerHTML += '<p class="muted" style="padding:0 10px">' + esc(e.message) + "</p>";
-    }
+    wrap.appendChild(div);
+    chartsEl.appendChild(wrap);
+    drawBandChart(div, best, h + "-day forecast · " + best.model, histData ? histData.history : []);
   }
-}
-
-async function fetchCsv(url) {
-  const text = await (await fetch(url)).text();
-  const lines = text.trim().split(/\r?\n/);
-  const header = lines[0].split(",").map((s) => s.trim());
-  const fc = { dates: [], predicted_sales: [], lower_80: [], upper_80: [], lower_95: [], upper_95: [] };
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split(",").map((s) => s.trim());
-    if (cells.length < header.length) continue;
-    const row = {};
-    header.forEach((h, j) => (row[h] = cells[j]));
-    fc.dates.push(row.date);
-    fc.predicted_sales.push(Number(row.predicted_sales));
-    fc.lower_80.push(Number(row.lower_80));
-    fc.upper_80.push(Number(row.upper_80));
-    fc.lower_95.push(Number(row.lower_95));
-    fc.upper_95.push(Number(row.upper_95));
-  }
-  return fc;
 }
 
 function makeBandTraces(hist, fc) {
   const traces = [];
   if (hist && hist.length) {
     traces.push({
-      x: hist.map((r) => r.date), y: hist.map((r) => r.sales),
-      name: "History", mode: "lines", line: { color: "#8b96ad", width: 1 },
+      x: hist.map((h) => h.date), y: hist.map((h) => h.sales),
+      name: "History", mode: "lines",
+      line: { color: "#9a8ca4", width: 1.4 },
     });
   }
-  if (fc && fc.dates) {
+  if (fc) {
     traces.push(
       {
         x: fc.dates, y: fc.lower_95, name: "95% band", type: "scatter",
@@ -264,7 +310,7 @@ function makeBandTraces(hist, fc) {
       },
       {
         x: fc.dates, y: fc.upper_95, name: "95% band", type: "scatter",
-        mode: "lines", fill: "tonexty", fillcolor: "rgba(79,140,255,0.15)",
+        mode: "lines", fill: "tonexty", fillcolor: "rgba(232,163,61,0.08)",
         line: { width: 0 }, hoverinfo: "skip",
       },
       {
@@ -273,12 +319,12 @@ function makeBandTraces(hist, fc) {
       },
       {
         x: fc.dates, y: fc.upper_80, name: "80% band", type: "scatter",
-        mode: "lines", fill: "tonexty", fillcolor: "rgba(110,231,183,0.15)",
+        mode: "lines", fill: "tonexty", fillcolor: "rgba(79,178,134,0.18)",
         line: { width: 0 }, hoverinfo: "skip",
       },
       {
         x: fc.dates, y: fc.predicted_sales, name: "Forecast", mode: "lines",
-        line: { color: "#4f8cff", width: 2 },
+        line: { color: "#e8a33d", width: 2.4 },
       }
     );
   }
@@ -288,24 +334,29 @@ function makeBandTraces(hist, fc) {
 function drawBandChart(el, fc, title, hist) {
   const traces = makeBandTraces(hist || [], fc);
   const layout = {
-    title: title || (fc.model ? fc.model + " forecast" : "Forecast"),
+    title: { text: title || (fc.model ? fc.model + " forecast" : "Forecast"), font: { family: "IBM Plex Mono, monospace", size: 12.5, color: "#cabdc6" } },
     paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
-    font: { color: "#e6ebf5" },
-    margin: { l: 60, r: 20, t: 40, b: 40 },
-    xaxis: { gridcolor: "#2a3550" }, yaxis: { gridcolor: "#2a3550", title: "Sales" },
-    legend: { orientation: "h", y: 1.12 },
+    font: { color: "#f3ead9", family: "Inter, sans-serif", size: 11.5 },
+    margin: { l: 56, r: 16, t: 44, b: 40 },
+    xaxis: { gridcolor: "#3a2c44", zerolinecolor: "#3a2c44" },
+    yaxis: { gridcolor: "#3a2c44", title: "Sales", zerolinecolor: "#3a2c44" },
+    legend: { orientation: "h", y: 1.18, font: { size: 10.5 } },
+    colorway: ["#e8a33d", "#4fb286"],
   };
   Plotly.newPlot(el, traces, layout, { responsive: true, displaylogo: false });
 }
 
-async function refreshForecastForm() {
-  fillStoreSelect($("#fc-store"), $("#fc-dataset").value);
-}
-
+/* ============================================================
+   Forecast tab
+   ============================================================ */
 async function runForecast() {
+  const { dataset, store } = state.ctx;
+  if (!dataset || store == null) {
+    toast("Pick a dataset and store from the sidebar first.");
+    return;
+  }
   const payload = {
-    dataset: $("#fc-dataset").value,
-    store_id: Number($("#fc-store").value),
+    dataset, store_id: store,
     horizon: Number($("#fc-horizon").value),
     model: $("#fc-model").value,
     promo_mode: $("#fc-promo").value,
@@ -331,7 +382,7 @@ async function runForecast() {
     drawBandChart($("#fc-chart"), fc, null, histData.history);
     renderForecastTable(fc);
   } catch (err) {
-    alert("Forecast failed: " + err.message);
+    toast("Forecast failed: " + err.message);
   } finally {
     btn.disabled = false;
     btn.textContent = "Run forecast";
@@ -340,20 +391,23 @@ async function runForecast() {
 
 function renderForecastTable(fc) {
   const rows = fc.dates.map((d, i) =>
-    "<tr><td>" + esc(d) + "</td><td>" + fc.predicted_sales[i].toLocaleString() + "</td>" +
-    "<td>" + fc.lower_80[i].toLocaleString() + "</td><td>" + fc.upper_80[i].toLocaleString() + "</td>" +
-    "<td>" + fc.lower_95[i].toLocaleString() + "</td><td>" + fc.upper_95[i].toLocaleString() + "</td></tr>"
+    "<tr><td>" + esc(d) + "</td><td class='num'>" + fc.predicted_sales[i].toLocaleString() + "</td>" +
+    "<td class='num'>" + fc.lower_80[i].toLocaleString() + "</td><td class='num'>" + fc.upper_80[i].toLocaleString() + "</td>" +
+    "<td class='num'>" + fc.lower_95[i].toLocaleString() + "</td><td class='num'>" + fc.upper_95[i].toLocaleString() + "</td></tr>"
   ).join("");
   $("#fc-table").innerHTML =
-    "<thead><tr><th>Date</th><th>Predicted</th><th>80% low</th><th>80% high</th><th>95% low</th><th>95% high</th></tr></thead>" +
+    "<thead><tr><th>Date</th><th class='num'>Predicted</th><th class='num'>80% low</th><th class='num'>80% high</th><th class='num'>95% low</th><th class='num'>95% high</th></tr></thead>" +
     "<tbody>" + rows + "</tbody>";
 }
 
-function fileLabel(inputEl, labelEl, text) {
+/* ============================================================
+   Upload tab
+   ============================================================ */
+function fileLabel(inputEl, labelEl, dropEl, text) {
   inputEl.addEventListener("change", () => {
-    labelEl.textContent = inputEl.files.length
-      ? inputEl.files[0].name
-      : text;
+    const has = inputEl.files.length > 0;
+    labelEl.textContent = has ? inputEl.files[0].name : text;
+    dropEl.classList.toggle("filled", has);
     $("#upload-btn").disabled = !$("#train-file").files.length;
   });
 }
@@ -373,11 +427,10 @@ async function uploadFiles() {
     setStatus(
       $("#upload-status"),
       "Uploaded " + esc(info.original_filename) + " · " + info.stores.length +
-      " store(s) found. Go to step 2 to train.",
+      " store(s) found. Continue to step 2.",
       "ok"
     );
     await loadDatasets();
-    fillDatasetSelect($("#up-dataset"), true);
     const target = "upload:" + info.upload_id;
     if (setSelectValue($("#up-dataset"), target)) {
       $("#up-dataset").dispatchEvent(new Event("change", { bubbles: true }));
@@ -421,19 +474,20 @@ function pollJob(jobId, dataset, store) {
       if (job.status === "succeeded") {
         setStatus(
           $("#train-status"),
-          "Training complete for store " + store + ". You can now forecast it.",
+          "Training complete for store " + store + " — ready to forecast.",
           "ok"
         );
+        toast("Store " + store + " finished training.", "ok");
         $("#train-btn").disabled = false;
         await loadDatasets();
-        fillDatasetSelect($("#fc-dataset"), true);
-        if (setSelectValue($("#fc-dataset"), dataset)) {
-          $("#fc-dataset").dispatchEvent(new Event("change", { bubbles: true }));
-          setSelectValue($("#fc-store"), store);
+        if (setSelectValue($("#ctx-dataset"), dataset)) {
+          $("#ctx-dataset").dispatchEvent(new Event("change", { bubbles: true }));
+          setSelectValue($("#ctx-store"), store);
+          $("#ctx-store").dispatchEvent(new Event("change", { bubbles: true }));
         }
-        setStatus($("#dash-status"), "", "");
       } else if (job.status === "failed") {
         setStatus($("#train-status"), "Training failed: " + esc(job.message), "error");
+        toast("Training failed for store " + store + ".");
         $("#train-btn").disabled = false;
       } else {
         setTimeout(tick, 1500);
@@ -452,16 +506,17 @@ function updateTrainBtn() {
   $("#train-btn").disabled = !(ds && st && st.store_id != null);
 }
 
+/* ============================================================
+   Wiring
+   ============================================================ */
 function bindEvents() {
-  $("#dash-dataset").addEventListener("change", () => {
-    fillStoreSelect($("#dash-store"), $("#dash-dataset").value);
-    refreshDashboard();
+  $("#ctx-dataset").addEventListener("change", syncContext);
+  $("#ctx-store").addEventListener("change", () => {
+    state.ctx.store = $("#ctx-store").value ? Number($("#ctx-store").value) : null;
+    updateStoreReadout();
+    refreshActiveTab();
   });
-  $("#dash-store").addEventListener("change", refreshDashboard);
 
-  $("#fc-dataset").addEventListener("change", () =>
-    fillStoreSelect($("#fc-store"), $("#fc-dataset").value)
-  );
   $("#fc-run").addEventListener("click", runForecast);
 
   $("#up-dataset").addEventListener("change", () => {
@@ -471,14 +526,18 @@ function bindEvents() {
   $("#up-store").addEventListener("change", updateTrainBtn);
   $("#upload-btn").addEventListener("click", uploadFiles);
   $("#train-btn").addEventListener("click", startTraining);
+
+  $("#lightbox").addEventListener("click", () => $("#lightbox").classList.add("hidden"));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") $("#lightbox").classList.add("hidden");
+  });
 }
 
 (async function init() {
   initTabs();
-  fileLabel($("#train-file"), $("#train-file-label"), "Choose train.csv");
-  fileLabel($("#store-file"), $("#store-file-label"), "Optional: choose store.csv");
+  fileLabel($("#train-file"), $("#train-file-label"), $("#train-drop"), "Choose train.csv");
+  fileLabel($("#store-file"), $("#store-file-label"), $("#store-drop"), "Optional: choose store.csv");
   bindEvents();
   await loadDatasets();
-  fillDatasetSelect($("#dash-dataset"));
-  $("#dash-dataset").dispatchEvent(new Event("change", { bubbles: true }));
+  syncContext();
 })();
